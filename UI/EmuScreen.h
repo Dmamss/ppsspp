@@ -70,9 +70,11 @@ public:
 protected:
 	void darken();
 	void focusChanged(ScreenFocusChange focusChange) override;
+	ScreenRenderFlags PreRender(ScreenRenderMode mode) override;
 
 private:
 	void CreateViews() override;
+	ScreenRenderFlags RunEmulation(bool skipBufferEffects);
 	void OnDevTools(UI::EventParams &params);
 	void OnChat(UI::EventParams &params);
 
@@ -94,9 +96,12 @@ private:
 	void ProcessQueuedVKeys();
 	void ProcessVKey(VirtKey vkey);
 
+	bool ShouldRunEmulation(ScreenRenderMode mode) const;
+
 	UI::Event OnDevMenu;
 	UI::Event OnChatMenu;
 	bool bootPending_ = true;
+	bool bootIsReset_ = false;
 	Path gamePath_;
 
 	bool quit_ = false;
@@ -156,6 +161,8 @@ private:
 	bool startDumping_ = false;
 #endif
 	bool autoLoadFailed_ = false;  // to prevent repeat reloads
+	bool readyToFinishBoot_ = false;
+	bool skipBufferEffects_ = false;  // cached state, fetched once per frame.
 };
 
 bool MustRunBehind();

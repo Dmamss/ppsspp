@@ -47,6 +47,8 @@ enum class LaunchUrlType {
 	BROWSER_URL,
 	MARKET_URL,
 	EMAIL_ADDRESS,
+	LOCAL_FILE,
+	LOCAL_FOLDER,  // Shows the folder. Not supported on all systems of course.
 };
 
 void System_Vibrate(int length_ms);
@@ -78,7 +80,7 @@ enum class SystemRequestType {
 	COPY_TO_CLIPBOARD,
 	SHARE_TEXT,
 	SET_WINDOW_TITLE,
-	TOGGLE_FULLSCREEN_STATE,
+	APPLY_FULLSCREEN_STATE,
 	GRAPHICS_BACKEND_FAILED_ALERT,
 	CREATE_GAME_SHORTCUT,
 	SHOW_FILE_IN_FOLDER,
@@ -260,6 +262,7 @@ enum class SystemNotification {
 	UI_STATE_CHANGED,
 	AUDIO_MODE_CHANGED,
 	APP_SWITCH_MODE_CHANGED,
+	PAD_STATE_CHANGED,
 };
 
 // I guess it's not super great architecturally to centralize this, since it's not general - but same with a lot of

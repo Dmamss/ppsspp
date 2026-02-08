@@ -308,6 +308,12 @@ VkResult VulkanContext::CreateInstance(const CreateInfo &info) {
 		}
 	}
 
+	// Log the list of devices.
+	INFO_LOG(Log::G3D, "%d Vulkan devices found:", (int)physicalDeviceProperties_.size());
+	for (const auto &props : physicalDeviceProperties_) {
+		INFO_LOG(Log::G3D, "%s (vendor: %08x)", props.properties.deviceName, props.properties.vendorID);
+	}
+
 	if (extensionsLookup_.EXT_debug_utils) {
 		_assert_(vkCreateDebugUtilsMessengerEXT != nullptr);
 		InitDebugUtilsCallback();
@@ -932,7 +938,6 @@ bool VulkanContext::CreateInstanceAndDevice(const CreateInfo &info) {
 		DestroyInstance();
 		return false;
 	}
-
 	return true;
 }
 
@@ -1550,7 +1555,7 @@ bool VulkanContext::InitSwapchain(VkPresentModeKHR desiredPresentMode) {
 
 	res = vkCreateSwapchainKHR(device_, &swap_chain_info, NULL, &swapchain_);
 	if (res != VK_SUCCESS) {
-		ERROR_LOG(Log::G3D, "vkCreateSwapchainKHR failed!");
+		ERROR_LOG(Log::G3D, "vkCreateSwapchainKHR failed! %s", VulkanResultToString(res));
 		return false;
 	}
 	INFO_LOG(Log::G3D, "Created swapchain: %dx%d %s", swap_chain_info.imageExtent.width, swap_chain_info.imageExtent.height, (surfCapabilities_.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_SRC_BIT) ? "(TRANSFER_SRC_BIT supported)" : "");

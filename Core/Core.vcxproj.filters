@@ -447,12 +447,6 @@
     <ClCompile Include="MIPS\ARM\ArmCompVFPU.cpp">
       <Filter>MIPS\ARM</Filter>
     </ClCompile>
-    <ClCompile Include="MIPS\ARM\ArmCompVFPUNEON.cpp">
-      <Filter>MIPS\ARM</Filter>
-    </ClCompile>
-    <ClCompile Include="MIPS\ARM\ArmCompVFPUNEONUtil.cpp">
-      <Filter>MIPS\ARM</Filter>
-    </ClCompile>
     <ClCompile Include="..\ext\disarm.cpp">
       <Filter>Ext</Filter>
     </ClCompile>
@@ -527,21 +521,6 @@
       <Filter>HLE\Libraries</Filter>
     </ClCompile>
     <ClCompile Include="HLE\sceNetAdhoc.cpp">
-      <Filter>HLE\Libraries</Filter>
-    </ClCompile>
-    <ClCompile Include="..\ext\aemu_postoffice\client\postoffice.c">
-      <Filter>HLE\Libraries</Filter>
-    </ClCompile>
-    <ClCompile Include="..\ext\aemu_postoffice\client\delay_impl_cpp.cpp">
-      <Filter>HLE\Libraries</Filter>
-    </ClCompile>
-    <ClCompile Include="..\ext\aemu_postoffice\client\sock_impl_windows.c">
-      <Filter>HLE\Libraries</Filter>
-    </ClCompile>
-    <ClCompile Include="..\ext\aemu_postoffice\client\mutex_impl_cpp.cpp">
-      <Filter>HLE\Libraries</Filter>
-    </ClCompile>
-    <ClCompile Include="..\ext\aemu_postoffice\client\log_impl_ppsspp.cpp">
       <Filter>HLE\Libraries</Filter>
     </ClCompile>
     <ClCompile Include="HLE\sceNetAdhocMatching.cpp">
@@ -1838,9 +1817,6 @@
     </ClInclude>
     <ClInclude Include="MIPS\JitCommon\JitState.h">
       <Filter>MIPS\JitCommon</Filter>
-    </ClInclude>
-    <ClInclude Include="MIPS\ARM\ArmCompVFPUNEONUtil.h">
-      <Filter>MIPS\ARM</Filter>
     </ClInclude>
     <ClInclude Include="Debugger\DisassemblyManager.h">
       <Filter>Debugger</Filter>

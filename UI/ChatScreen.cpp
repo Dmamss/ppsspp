@@ -42,7 +42,7 @@ void ChatMenu::CreateContents(UI::ViewGroup *parent) {
 		LinearLayout *quickChat = outer->Add(new LinearLayout(ORIENT_HORIZONTAL, new LayoutParams(FILL_PARENT, WRAP_CONTENT)));
 		for (int i = 0; i < 5; i++) {
 			std::string name = std::to_string(i + 1);
-			quickChat->Add(new Button(name, new LinearLayoutParams(1.0)))->OnClick.Add([this, i](UI::EventParams &e) {
+			quickChat->Add(new Button(name, new LinearLayoutParams(1.0)))->OnClick.Add([i](UI::EventParams &e) {
 				sendChat(g_Config.sQuickChat[i]);
 			});
 		}
@@ -178,7 +178,7 @@ void ChatMenu::Update() {
 #if defined(USING_WIN_UI)
 	// Could remove the fullscreen check here, it works now.
 	auto n = GetI18NCategory(I18NCat::NETWORKING);
-	if (promptInput_ && g_Config.bBypassOSKWithKeyboard && !g_Config.UseFullScreen()) {
+	if (promptInput_ && g_Config.bBypassOSKWithKeyboard && !g_Config.bFullScreen) {
 		System_InputBoxGetString(token_, n->T("Chat"), n->T("Chat Here"), false, [](const std::string &value, int) {
 			sendChat(value);
 		});

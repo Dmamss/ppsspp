@@ -198,6 +198,14 @@ static bool DefaultEnableStateUndo() {
 	return true;
 }
 
+static float DefaultGameGridScale() {
+#if PPSSPP_PLATFORM(IOS)
+	return 1.25f;
+#else
+	return 1.0f;
+#endif
+}
+
 static float DefaultUISaturation() {
 	return IsVREnabled() ? 1.5f : 1.0f;
 }
@@ -269,7 +277,7 @@ static const ConfigSetting generalSettings[] = {
 
 	ConfigSetting("ShowRegionOnGameIcon", SETTING(g_Config, bShowRegionOnGameIcon), false, CfgFlag::DEFAULT),
 	ConfigSetting("ShowIDOnGameIcon", SETTING(g_Config, bShowIDOnGameIcon), false, CfgFlag::DEFAULT),
-	ConfigSetting("GameGridScale", SETTING(g_Config, fGameGridScale), 1.0, CfgFlag::DEFAULT),
+	ConfigSetting("GameGridScale", SETTING(g_Config, fGameGridScale), &DefaultGameGridScale, CfgFlag::DEFAULT),
 	ConfigSetting("GridView1", SETTING(g_Config, bGridView1), true, CfgFlag::DEFAULT),
 	ConfigSetting("GridView2", SETTING(g_Config, bGridView2), true, CfgFlag::DEFAULT),
 	ConfigSetting("GridView3", SETTING(g_Config, bGridView3), false, CfgFlag::DEFAULT),
@@ -281,14 +289,7 @@ static const ConfigSetting generalSettings[] = {
 	ConfigSetting("RightAnalogPress", SETTING(g_Config, iRightAnalogPress), 0, CfgFlag::PER_GAME),
 	ConfigSetting("RightAnalogCustom", SETTING(g_Config, bRightAnalogCustom), false, CfgFlag::PER_GAME),
 	ConfigSetting("RightAnalogDisableDiagonal", SETTING(g_Config, bRightAnalogDisableDiagonal), false, CfgFlag::PER_GAME),
-	ConfigSetting("SwipeUp", SETTING(g_Config, iSwipeUp), 0, CfgFlag::PER_GAME),
-	ConfigSetting("SwipeDown", SETTING(g_Config, iSwipeDown), 0, CfgFlag::PER_GAME),
-	ConfigSetting("SwipeLeft", SETTING(g_Config, iSwipeLeft), 0, CfgFlag::PER_GAME),
-	ConfigSetting("SwipeRight", SETTING(g_Config, iSwipeRight), 0, CfgFlag::PER_GAME),
-	ConfigSetting("SwipeSensitivity", SETTING(g_Config, fSwipeSensitivity), 1.0f, CfgFlag::PER_GAME),
-	ConfigSetting("SwipeSmoothing", SETTING(g_Config, fSwipeSmoothing), 0.3f, CfgFlag::PER_GAME),
-	ConfigSetting("DoubleTapGesture", SETTING(g_Config, iDoubleTapGesture), 0, CfgFlag::PER_GAME),
-	ConfigSetting("GestureControlEnabled", SETTING(g_Config, bGestureControlEnabled), false, CfgFlag::PER_GAME),
+
 	ConfigSetting("TouchGliding", SETTING(g_Config, bTouchGliding), false, CfgFlag::PER_GAME),
 
 	// "default" means let emulator decide, "" means disable.
@@ -328,6 +329,7 @@ static const ConfigSetting generalSettings[] = {
 	ConfigSetting("WindowY", SETTING(g_Config, iWindowY), -1, CfgFlag::DEFAULT),
 	ConfigSetting("WindowWidth", SETTING(g_Config, iWindowWidth), 0, CfgFlag::DEFAULT),   // 0 will be automatically reset later (need to do the AdjustWindowRect dance).
 	ConfigSetting("WindowHeight", SETTING(g_Config, iWindowHeight), 0, CfgFlag::DEFAULT),
+	ConfigSetting("WindowSizeState", SETTING(g_Config, iWindowSizeState), (int)WindowSizeState::Normal, CfgFlag::DEFAULT),
 	ConfigSetting("ShrinkIfWindowSmall", SETTING(g_Config, bShrinkIfWindowSmall), false, CfgFlag::DEFAULT),
 #endif
 
@@ -464,7 +466,9 @@ static int DefaultGPUBackend() {
 		return (int)GPUBackend::OPENGL;
 	}
 
-#if PPSSPP_PLATFORM(WINDOWS)
+#if PPSSPP_PLATFORM(UWP)
+	return (int)GPUBackend::DIRECT3D11;
+#elif PPSSPP_PLATFORM(WINDOWS)
 	// On Win10, there's a good chance Vulkan will work by default.
 	if (IsWin10OrHigher()) {
 		return (int)GPUBackend::VULKAN;
@@ -661,11 +665,33 @@ static const ConfigSetting displayLayoutSettings[] = {
 	ConfigSetting("DisplayAspectRatio", SETTING(g_Config.displayLayoutLandscape, fDisplayAspectRatio), CfgFlag::PER_GAME),
 	ConfigSetting("IgnoreScreenInsets", SETTING(g_Config.displayLayoutLandscape, bIgnoreScreenInsets), CfgFlag::PER_GAME),
 	ConfigSetting("InternalScreenRotation", SETTING(g_Config.displayLayoutLandscape, iInternalScreenRotation), CfgFlag::PER_GAME),
+	ConfigSetting("RotateControlsWithScreen", SETTING(g_Config.displayLayoutLandscape, bRotateControlsWithScreen), CfgFlag::PER_GAME),
 	ConfigSetting("EnableCardboardVR", SETTING(g_Config.displayLayoutLandscape, bEnableCardboardVR), CfgFlag::PER_GAME),
 	ConfigSetting("CardboardScreenSize", SETTING(g_Config.displayLayoutLandscape, iCardboardScreenSize), CfgFlag::PER_GAME),
 	ConfigSetting("CardboardXShift", SETTING(g_Config.displayLayoutLandscape, iCardboardXShift), CfgFlag::PER_GAME),
 	ConfigSetting("CardboardYShift", SETTING(g_Config.displayLayoutLandscape, iCardboardYShift), CfgFlag::PER_GAME),
 	ConfigSetting("ImmersiveMode", SETTING(g_Config.displayLayoutLandscape, bImmersiveMode), CfgFlag::PER_GAME),
+};
+
+bool GestureControlConfig::ResetToDefault(std::string_view blockName) {
+	static const GestureControlConfig defaultLayout;
+	*this = defaultLayout;
+	// TODO: Check blockname to set defaults differently for secondary zone(s).
+	return true;
+}
+
+// These were previously mostly part of General (which was wrong).
+static const ConfigSetting gestureControlSettings[] = {
+	ConfigSetting("SwipeUp", SETTING(g_Config.gestureControls[0], iSwipeUp), 0, CfgFlag::PER_GAME),
+	ConfigSetting("SwipeDown", SETTING(g_Config.gestureControls[0], iSwipeDown), 0, CfgFlag::PER_GAME),
+	ConfigSetting("SwipeLeft", SETTING(g_Config.gestureControls[0], iSwipeLeft), 0, CfgFlag::PER_GAME),
+	ConfigSetting("SwipeRight", SETTING(g_Config.gestureControls[0], iSwipeRight), 0, CfgFlag::PER_GAME),
+	ConfigSetting("SwipeSensitivity", SETTING(g_Config.gestureControls[0], fSwipeSensitivity), 1.0f, CfgFlag::PER_GAME),
+	ConfigSetting("SwipeSmoothing", SETTING(g_Config.gestureControls[0], fSwipeSmoothing), 0.3f, CfgFlag::PER_GAME),
+	ConfigSetting("DoubleTapGesture", SETTING(g_Config.gestureControls[0], iDoubleTapGesture), 0, CfgFlag::PER_GAME),
+	ConfigSetting("GestureControlEnabled", SETTING(g_Config.gestureControls[0], bGestureControlEnabled), false, CfgFlag::PER_GAME),
+	ConfigSetting("AnalogGesture", SETTING(g_Config.gestureControls[0], bAnalogGesture), false, CfgFlag::PER_GAME),
+	ConfigSetting("AnalogGestureSensibility", SETTING(g_Config.gestureControls[0], fAnalogGestureSensitivity), 1.0f, CfgFlag::PER_GAME),
 };
 
 static const ConfigSetting graphicsSettings[] = {
@@ -966,7 +992,8 @@ static const ConfigSetting controlSettings[] = {
 	ConfigSetting("TiltAnalogDeadzoneRadius", SETTING(g_Config, fTiltAnalogDeadzoneRadius), 0.0f, CfgFlag::PER_GAME),
 	ConfigSetting("TiltInverseDeadzone", SETTING(g_Config, fTiltInverseDeadzone), 0.0f, CfgFlag::PER_GAME),
 	ConfigSetting("TiltCircularDeadzone", SETTING(g_Config, bTiltCircularDeadzone), true, CfgFlag::PER_GAME),
-	ConfigSetting("TiltInputType", SETTING(g_Config, iTiltInputType), 0, CfgFlag::PER_GAME),
+	ConfigSetting("TiltInputType", SETTING(g_Config, iTiltInputType), 1, CfgFlag::PER_GAME),
+	ConfigSetting("TiltInputEnabled", SETTING(g_Config, bTiltInputEnabled), false, CfgFlag::PER_GAME),
 
 	ConfigSetting("DisableDpadDiagonals", SETTING(g_Config, bDisableDpadDiagonals), false, CfgFlag::PER_GAME),
 	ConfigSetting("GamepadOnlyFocused", SETTING(g_Config, bGamepadOnlyFocused), false, CfgFlag::PER_GAME),
@@ -1000,16 +1027,13 @@ static const ConfigSetting controlSettings[] = {
 
 	ConfigSetting("SystemControls", SETTING(g_Config, bSystemControls), true, CfgFlag::DEFAULT),
 	ConfigSetting("RapidFileInterval", SETTING(g_Config, iRapidFireInterval), 5, CfgFlag::DEFAULT),
-
-	ConfigSetting("AnalogGesture", SETTING(g_Config, bAnalogGesture), false, CfgFlag::PER_GAME),
-	ConfigSetting("AnalogGestureSensibility", SETTING(g_Config, fAnalogGestureSensibility), 1.0f, CfgFlag::PER_GAME),
 };
 
 static const ConfigSetting networkSettings[] = {
 	ConfigSetting("EnableWlan", SETTING(g_Config, bEnableWlan), false, CfgFlag::PER_GAME),
 	ConfigSetting("EnableAdhocServer", SETTING(g_Config, bEnableAdhocServer), false, CfgFlag::PER_GAME),
 	ConfigSetting("proAdhocServer", SETTING(g_Config, sProAdhocServer), "socom.cc", CfgFlag::PER_GAME),
-	ConfigSetting("ServerHasRelay", SETTING(g_Config, bServerHasRelay), true, CfgFlag::PER_GAME),
+	ConfigSetting("UseServerRelay", SETTING(g_Config, bUseServerRelay), false, CfgFlag::PER_GAME),
 	ConfigSetting("proAdhocServerList", SETTING(g_Config, proAdhocServerList), &defaultProAdhocServerList, CfgFlag::DEFAULT),
 	ConfigSetting("PortOffset", SETTING(g_Config, iPortOffset), 10000, CfgFlag::PER_GAME),
 	ConfigSetting("PrimaryDNSServer", SETTING(g_Config, sInfrastructureDNSServer), "67.222.156.250", CfgFlag::PER_GAME),
@@ -1127,6 +1151,8 @@ static const ConfigSectionMeta g_sectionMeta[] = {
 	{ &g_Config.displayLayoutPortrait, displayLayoutSettings, ARRAY_SIZE(displayLayoutSettings), "DisplayLayout.Portrait"},  // These we don't want to read from the old settings, since for most people, those settings will be bad.
 	{ &g_Config.touchControlsLandscape, touchControlSettings, ARRAY_SIZE(touchControlSettings), "TouchControls.Landscape", "Control" },  // We read the old settings from [Control], since most people played in landscape before.
 	{ &g_Config.touchControlsPortrait, touchControlSettings, ARRAY_SIZE(touchControlSettings), "TouchControls.Portrait"},  // These we don't want to read from the old settings, since for most people, those settings will be bad.
+	{ &g_Config.gestureControls[0], gestureControlSettings, ARRAY_SIZE(gestureControlSettings), "GestureControls.Left", "General"},  // We read the old settings from [General], since most of them used to be there (except the analog stuff).
+	{ &g_Config.gestureControls[1], gestureControlSettings, ARRAY_SIZE(gestureControlSettings), "GestureControls.Right", "General"},  // We read the old settings from [General], since most of them used to be there (except the analog stuff).
 };
 
 ConfigBlock *GetConfigBlockForSection(std::string_view sectionName) {
@@ -1245,7 +1271,8 @@ void Config::ReadAllSettings(const IniFile &iniFile) {
 			applyDefaultPerSetting = false;
 		}
 		for (size_t j = 0; j < meta.settingsCount; j++) {
-			meta.settings[j].ReadFromIniSection(configBlock, section, applyDefaultPerSetting);
+			const ConfigSetting &setting = meta.settings[j];
+			setting.ReadFromIniSection(configBlock, section, applyDefaultPerSetting);
 		}
 	}
 }
@@ -1369,6 +1396,10 @@ void Config::Load(const char *iniFileName, const char *controllerIniFilename) {
 	INFO_LOG(Log::Loader, "Config loaded: '%s' (%0.1f ms)", iniFilename_.c_str(), (time_now_d() - startTime) * 1000.0);
 }
 
+bool Config::ShouldSaveSetting(const void *ptr) const {
+	return std::find(settingsNotToSave_.begin(), settingsNotToSave_.end(), ptr) == settingsNotToSave_.end();
+}
+
 // If we're in game specific mode, we need to:
 // * Save the game-specific settings to the game-specific ini file.
 // * Then, save the NON-game-specific settings ONLY to the regular ini file!
@@ -1406,6 +1437,11 @@ bool Config::Save(const char *saveReason) {
 			for (size_t j = 0; j < meta.settingsCount; j++) {
 				if (IsGameSpecific() && (meta.settings[j].Flags() & CfgFlag::PER_GAME)) {
 					// Skip per-game settings in non-game-specific ini.
+					continue;
+				}
+				if (!ShouldSaveSetting(meta.settings[j].GetVoidPtr(configBlock))) {
+					// Skip settings marked as "don't save".
+					INFO_LOG(Log::System, "Not saving setting '%.*s' as marked as don't save.", STR_VIEW(meta.settings[j].IniKey()));
 					continue;
 				}
 				meta.settings[j].WriteToIniSection(configBlock, section);
@@ -1494,12 +1530,19 @@ void Config::PostLoadCleanup() {
 		g_Config.iCpuCore = (int)CPUCore::IR_INTERPRETER;
 	}
 
-	// This caps the exponent 4 (so 16x.). No hardware supports more anyway.
+	// This caps the aniso level exponent to 4 (so 16x.). No hardware supports more anyway.
 	iAnisotropyLevel = std::clamp(iAnisotropyLevel, 0, 4);
 
-	if (iGPUBackend == 1) {  // d3d9, no longer supported
-		iGPUBackend = 2;  // d3d11
+	if (iGPUBackend == 1) {  // d3d9, no longer supported. Fall back to D3D11.
+		iGPUBackend = (int)GPUBackend::DIRECT3D11;
+	} else if (iGPUBackend < 0 || iGPUBackend > 3) {
+		iGPUBackend = (int)DefaultGPUBackend();
 	}
+
+#if PPSSPP_PLATFORM(UWP)
+	// Enforce D3D11.
+	iGPUBackend = (int)GPUBackend::DIRECT3D11;
+#endif
 
 	// Set a default MAC, and correct if it's an old format.
 	if (sMACAddress.length() != 17)
@@ -1809,13 +1852,13 @@ void Config::GetReportingInfo(UrlEncoder &data) const {
 	}
 }
 
-void PlayTimeTracker::Start(const std::string &gameId) {
+void PlayTimeTracker::Start(std::string_view gameId) {
 	if (gameId.empty()) {
 		return;
 	}
-	VERBOSE_LOG(Log::System, "GameTimeTracker::Start(%s)", gameId.c_str());
+	VERBOSE_LOG(Log::System, "GameTimeTracker::Start(%.*s)", STR_VIEW(gameId));
 
-	auto iter = tracker_.find(std::string(gameId));
+	auto iter = tracker_.find(gameId);
 	if (iter != tracker_.end()) {
 		if (iter->second.startTime == 0.0) {
 			iter->second.lastTimePlayed = time_now_unix_utc();
@@ -1828,17 +1871,17 @@ void PlayTimeTracker::Start(const std::string &gameId) {
 	playTime.lastTimePlayed = time_now_unix_utc();
 	playTime.totalTimePlayed = 0.0;
 	playTime.startTime = time_now_d();
-	tracker_[gameId] = playTime;
+	tracker_[std::string(gameId)] = playTime;
 }
 
-void PlayTimeTracker::Stop(const std::string &gameId) {
+void PlayTimeTracker::Stop(std::string_view gameId) {
 	if (gameId.empty()) {
 		return;
 	}
 
-	VERBOSE_LOG(Log::System, "GameTimeTracker::Stop(%s)", gameId.c_str());
+	VERBOSE_LOG(Log::System, "GameTimeTracker::Stop(%.*s)", STR_VIEW(gameId));
 
-	auto iter = tracker_.find(std::string(gameId));
+	auto iter = tracker_.find(gameId);
 	if (iter != tracker_.end()) {
 		if (iter->second.startTime != 0.0) {
 			iter->second.totalTimePlayed += time_now_d() - iter->second.startTime;
@@ -1850,6 +1893,15 @@ void PlayTimeTracker::Stop(const std::string &gameId) {
 
 	// Shouldn't happen, ignore this case.
 	WARN_LOG(Log::System, "GameTimeTracker::Stop called without corresponding GameTimeTracker::Start");
+}
+
+void PlayTimeTracker::Reset(std::string_view gameId) {
+	auto iter = tracker_.find(gameId);
+	if (iter != tracker_.end()) {
+		iter->second.lastTimePlayed = 0;
+		iter->second.totalTimePlayed = 0;
+		iter->second.startTime = 0.0;
+	}
 }
 
 void PlayTimeTracker::Load(const Section *section) {
@@ -1874,7 +1926,7 @@ void PlayTimeTracker::Save(Section *section) {
 	}
 }
 
-bool PlayTimeTracker::GetPlayedTimeString(const std::string &gameId, std::string *str) const {
+bool PlayTimeTracker::GetPlayedTimeString(std::string_view gameId, std::string *str) const {
 	auto ga = GetI18NCategory(I18NCat::GAME);
 
 	auto iter = tracker_.find(gameId);

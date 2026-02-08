@@ -21,6 +21,7 @@ enum class TopBarFlags {
 	Default = 0,
 	Portrait = 1,
 	ContextMenuButton = 2,
+	NoBackButton = 4,
 };
 ENUM_CLASS_BITOPS(TopBarFlags);
 
@@ -75,6 +76,19 @@ private:
 	Path gamePath_;
 	GameInfoFlags image_;
 	float scale_ = 1.0f;
+};
+
+class GameInfoBGView : public UI::InertView {
+public:
+	GameInfoBGView(const Path &gamePath, UI::LayoutParams *layoutParams) : InertView(layoutParams), gamePath_(gamePath) {}
+
+	void Draw(UIContext &dc) override;
+	std::string DescribeText() const override { return ""; }
+	void SetColor(uint32_t c) { color_ = c; }
+
+protected:
+	Path gamePath_;
+	uint32_t color_ = 0xFFC0C0C0;
 };
 
 void AddRotationPicker(ScreenManager *screenManager, UI::ViewGroup *parent, bool text);
