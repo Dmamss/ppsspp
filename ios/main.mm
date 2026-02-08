@@ -651,41 +651,41 @@ int main(int argc, char *argv[]) {
 	g_logManager.EnableOutput(LogOutput::Stdio);
 
 #if PPSSPP_PLATFORM(IOS_APP_STORE)
-	g_jitAvailable = false;
-#else
-	// Hacky hacks to try to enable JIT by pretending to be a debugger.
-	csops = reinterpret_cast<decltype(csops)>(dlsym(dlopen(nullptr, RTLD_LAZY), "csops"));
-	exc_server = reinterpret_cast<decltype(exc_server)>(dlsym(dlopen(NULL, RTLD_LAZY), "exc_server"));
-	ptrace = reinterpret_cast<decltype(ptrace)>(dlsym(dlopen(NULL, RTLD_LAZY), "ptrace"));
-	// see https://github.com/hrydgard/ppsspp/issues/11905
-
-	if (jb_spawn_ptrace_child(argc, argv)) {
-		INFO_LOG(Log::System, "JIT: ptrace() child spawn trick\n");
-	} else if (jb_has_jit_entitlement()) {
-		INFO_LOG(Log::System, "JIT: found entitlement\n");
-	} else if (jb_has_cs_disabled()) {
-		INFO_LOG(Log::System, "JIT: CS_KILL disabled\n");
-	} else if (jb_has_cs_execseg_allow_unsigned()) {
-		INFO_LOG(Log::System, "JIT: CS_EXECSEG_ALLOW_UNSIGNED set\n");
-	} else if (jb_enable_ptrace_hack()) {
-		INFO_LOG(Log::System, "JIT: ptrace() hack supported\n");
-	} else {
-		INFO_LOG(Log::System, "JIT: ptrace() hack failed\n");
-		g_jitAvailable = false;
-	}
-
-	// Tried checking for JIT support here with AllocateExecutableMemory and ProtectMemoryPages,
-	// but it just succeeds, and then fails when you try to execute from it.
-
-	// So, we'll just resort to a version check.
-	// TODO: This seems outdated.
-/*
-	if (g_iosVersionMajor > 14 || (g_iosVersionMajor == 14 && g_iosVersionMinor >= 4)) {
-		g_jitAvailable = false;
-	} else {
+	// On iOS 26+, JIT is available via MAP_JIT + com.apple.security.cs.allow-jit entitlement.
+	// No ptrace hacks needed - the OS natively supports JIT for entitled apps.
+	if (g_iosVersionMajor >= 26) {
+		INFO_LOG(Log::System, "JIT: iOS %d detected, using native MAP_JIT support\n", g_iosVersionMajor);
 		g_jitAvailable = true;
+	} else {
+		g_jitAvailable = false;
 	}
-*/
+#else
+	// On iOS 26+, JIT is available natively via MAP_JIT + entitlement.
+	if (g_iosVersionMajor >= 26) {
+		INFO_LOG(Log::System, "JIT: iOS %d detected, using native MAP_JIT support\n", g_iosVersionMajor);
+		g_jitAvailable = true;
+	} else {
+		// Hacky hacks to try to enable JIT by pretending to be a debugger.
+		csops = reinterpret_cast<decltype(csops)>(dlsym(dlopen(nullptr, RTLD_LAZY), "csops"));
+		exc_server = reinterpret_cast<decltype(exc_server)>(dlsym(dlopen(NULL, RTLD_LAZY), "exc_server"));
+		ptrace = reinterpret_cast<decltype(ptrace)>(dlsym(dlopen(NULL, RTLD_LAZY), "ptrace"));
+		// see https://github.com/hrydgard/ppsspp/issues/11905
+
+		if (jb_spawn_ptrace_child(argc, argv)) {
+			INFO_LOG(Log::System, "JIT: ptrace() child spawn trick\n");
+		} else if (jb_has_jit_entitlement()) {
+			INFO_LOG(Log::System, "JIT: found entitlement\n");
+		} else if (jb_has_cs_disabled()) {
+			INFO_LOG(Log::System, "JIT: CS_KILL disabled\n");
+		} else if (jb_has_cs_execseg_allow_unsigned()) {
+			INFO_LOG(Log::System, "JIT: CS_EXECSEG_ALLOW_UNSIGNED set\n");
+		} else if (jb_enable_ptrace_hack()) {
+			INFO_LOG(Log::System, "JIT: ptrace() hack supported\n");
+		} else {
+			INFO_LOG(Log::System, "JIT: ptrace() hack failed\n");
+			g_jitAvailable = false;
+		}
+	}
 #endif
 
 	// Ignore sigpipe.

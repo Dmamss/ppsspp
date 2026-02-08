@@ -39,6 +39,7 @@
 #include <sys/types.h>
 #include <sys/mman.h>
 #include <mach/vm_param.h>
+#include <pthread.h>
 #endif
 
 #ifndef _WIN32
@@ -186,10 +187,19 @@ void *AllocateExecutableMemory(size_t size) {
 #endif
 
 	int prot = PROT_READ | PROT_WRITE | PROT_EXEC;
-	if (PlatformIsWXExclusive())
-		prot = PROT_READ | PROT_WRITE;  // POST_EXEC is added later in this case.
+	int flags = MAP_ANON | MAP_PRIVATE;
 
-	void* ptr = mmap(map_hint, size, prot, MAP_ANON | MAP_PRIVATE, -1, 0);
+#if defined(__APPLE__) && PPSSPP_ARCH(ARM64)
+	// On Apple ARM64, use MAP_JIT for hardware-enforced W^X via APRR/SPRR.
+	// With MAP_JIT, we allocate with full RWX; the actual W^X toggling is done
+	// per-thread via pthread_jit_write_protect_np().
+	flags |= MAP_JIT;
+#else
+	if (PlatformIsWXExclusive())
+		prot = PROT_READ | PROT_WRITE;  // PROT_EXEC is added later in this case.
+#endif
+
+	void* ptr = mmap(map_hint, size, prot, flags, -1, 0);
 
 	if (ptr == MAP_FAILED) {
 		ptr = nullptr;
@@ -311,6 +321,23 @@ bool ProtectMemoryPages(const void* ptr, size_t size, uint32_t memProtFlags) {
 			_assert_msg_(false, "Bad memory protect flags %d: W^X is in effect, can't both write and exec", memProtFlags);
 		}
 	}
+
+#if defined(__APPLE__) && PPSSPP_ARCH(ARM64)
+	// On Apple ARM64 with MAP_JIT, use pthread_jit_write_protect_np() for fast
+	// per-thread W^X toggling instead of mprotect(). This is required for iOS 26+
+	// and is also faster on macOS Apple Silicon.
+	if (PlatformIsWXExclusive()) {
+		if (memProtFlags & MEM_PROT_EXEC) {
+			// Transition to executable (read+exec): re-enable JIT write protection
+			pthread_jit_write_protect_np(true);
+		} else {
+			// Transition to writable (read+write): disable JIT write protection
+			pthread_jit_write_protect_np(false);
+		}
+		return true;
+	}
+#endif
+
 	// Note - VirtualProtect will affect the full pages containing the requested range.
 	// mprotect does not seem to, at least not on Android unless I made a mistake somewhere, so we manually round.
 #ifdef _WIN32
