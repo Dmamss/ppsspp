@@ -40,6 +40,12 @@ bool PlatformIsWXExclusive();
 void* AllocateExecutableMemory(size_t size);
 void FreeExecutableMemory(void *ptr, size_t size);
 
+// Dual-mapped JIT allocation (Dolphin/Play! method) for Apple ARM64.
+// Returns RX (read-execute) pointer. Outputs RW (read-write) pointer via writablePtr.
+// Write code through writablePtr, execute from the returned pointer. No mprotect needed.
+void *AllocateExecutableMemoryDual(size_t size, void **writablePtr);
+void FreeExecutableMemoryDual(void *rxPtr, void *rwPtr, size_t size);
+
 void* AllocateMemoryPages(size_t size, uint32_t memProtFlags);
 // Note that on platforms returning PlatformIsWXExclusive, you cannot set a page to be both readable and writable at the same time.
 bool ProtectMemoryPages(const void* ptr, size_t size, uint32_t memProtFlags);

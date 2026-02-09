@@ -38,6 +38,8 @@
 #ifdef __APPLE__
 #include <sys/types.h>
 #include <sys/mman.h>
+#include <mach/mach.h>
+#include <mach/vm_map.h>
 #include <mach/vm_param.h>
 #include <pthread.h>
 #endif
@@ -189,10 +191,9 @@ void *AllocateExecutableMemory(size_t size) {
 	int prot = PROT_READ | PROT_WRITE | PROT_EXEC;
 	int flags = MAP_ANON | MAP_PRIVATE;
 
-#if defined(__APPLE__) && PPSSPP_ARCH(ARM64)
-	// On Apple ARM64, use MAP_JIT for hardware-enforced W^X via APRR/SPRR.
-	// With MAP_JIT, we allocate with full RWX; the actual W^X toggling is done
-	// per-thread via pthread_jit_write_protect_np().
+#if PPSSPP_PLATFORM(MAC) && PPSSPP_ARCH(ARM64)
+	// macOS ARM64: MAP_JIT enables hardware W^X toggling via pthread_jit_write_protect_np.
+	// Faster than mprotect - uses APRR/SPRR (single MSR instruction per toggle).
 	flags |= MAP_JIT;
 #else
 	if (PlatformIsWXExclusive())
@@ -289,6 +290,79 @@ void FreeExecutableMemory(void *ptr, size_t size) {
 	FreeMemoryPages(ptr, size);
 }
 
+// Dual-mapped JIT memory allocation for Apple ARM64 (Dolphin/Play! method).
+// Creates two mappings of the same physical memory:
+//   RX (read-execute) - for code execution
+//   RW (read-write)   - for code generation
+// No mprotect or pthread_jit_write_protect_np needed.
+#if PPSSPP_PLATFORM(IOS) && PPSSPP_ARCH(ARM64)
+void *AllocateExecutableMemoryDual(size_t size, void **writablePtr) {
+	// Allocate RX region. Do NOT use MAP_JIT here - MAP_JIT enables hardware
+	// APRR/SPRR W^X toggling which is incompatible with vm_remap dual-mapping.
+	// The com.apple.security.cs.allow-jit entitlement allows PROT_EXEC without MAP_JIT.
+	// This matches Play!/DolphiniOS approach (LuckNoTXM path).
+	void *rxBase = mmap(nullptr, size, PROT_READ | PROT_EXEC,
+	                    MAP_ANON | MAP_PRIVATE, -1, 0);
+	if (rxBase == MAP_FAILED) {
+		ERROR_LOG(Log::MemMap, "AllocateExecutableMemoryDual: mmap RX failed (%d) errno=%d", (int)size, errno);
+		*writablePtr = nullptr;
+		return nullptr;
+	}
+
+	// Create RW alias of the same physical pages via vm_remap
+	vm_address_t rwBase = 0;
+	vm_prot_t curProt, maxProt;
+	kern_return_t kr = vm_remap(mach_task_self(), &rwBase, size, 0,
+	                            VM_FLAGS_ANYWHERE, mach_task_self(),
+	                            (vm_address_t)rxBase, FALSE,
+	                            &curProt, &maxProt, VM_INHERIT_NONE);
+	if (kr != KERN_SUCCESS) {
+		ERROR_LOG(Log::MemMap, "AllocateExecutableMemoryDual: vm_remap failed: %d", kr);
+		munmap(rxBase, size);
+		*writablePtr = nullptr;
+		return nullptr;
+	}
+
+	// Set RW protection on the alias
+	kr = vm_protect(mach_task_self(), rwBase, size, FALSE,
+	                VM_PROT_READ | VM_PROT_WRITE);
+	if (kr != KERN_SUCCESS) {
+		ERROR_LOG(Log::MemMap, "AllocateExecutableMemoryDual: vm_protect failed: %d", kr);
+		vm_deallocate(mach_task_self(), rwBase, size);
+		munmap(rxBase, size);
+		*writablePtr = nullptr;
+		return nullptr;
+	}
+
+	INFO_LOG(Log::MemMap, "AllocateExecutableMemoryDual: RX=%p RW=%p size=%d",
+	         rxBase, (void *)rwBase, (int)size);
+	*writablePtr = (void *)rwBase;
+	return rxBase;
+}
+
+void FreeExecutableMemoryDual(void *rxPtr, void *rwPtr, size_t size) {
+	if (rwPtr) {
+		vm_deallocate(mach_task_self(), (vm_address_t)rwPtr, size);
+	}
+	if (rxPtr) {
+		munmap(rxPtr, size);
+	}
+}
+#else
+void *AllocateExecutableMemoryDual(size_t size, void **writablePtr) {
+	// Non-iOS fallback: just use the regular allocation, same pointer for both.
+	// macOS ARM64 uses MAP_JIT + pthread_jit_write_protect_np instead.
+	void *ptr = AllocateExecutableMemory(size);
+	*writablePtr = ptr;
+	return ptr;
+}
+
+void FreeExecutableMemoryDual(void *rxPtr, void *rwPtr, size_t size) {
+	(void)rwPtr;
+	FreeExecutableMemory(rxPtr, size);
+}
+#endif
+
 void FreeAlignedMemory(void* ptr) {
 	if (!ptr)
 		return;
@@ -322,18 +396,18 @@ bool ProtectMemoryPages(const void* ptr, size_t size, uint32_t memProtFlags) {
 		}
 	}
 
-#if defined(__APPLE__) && PPSSPP_ARCH(ARM64)
-	// On Apple ARM64 with MAP_JIT, use pthread_jit_write_protect_np() for fast
-	// per-thread W^X toggling instead of mprotect(). This is required for iOS 26+
-	// and is also faster on macOS Apple Silicon.
+#if PPSSPP_PLATFORM(IOS) && PPSSPP_ARCH(ARM64)
+	// iOS: dual-mapped JIT memory (Dolphin/Play! method). RW and RX are separate
+	// mappings of the same physical pages. No permission toggling needed.
 	if (PlatformIsWXExclusive()) {
-		if (memProtFlags & MEM_PROT_EXEC) {
-			// Transition to executable (read+exec): re-enable JIT write protection
-			pthread_jit_write_protect_np(true);
-		} else {
-			// Transition to writable (read+write): disable JIT write protection
-			pthread_jit_write_protect_np(false);
-		}
+		return true;
+	}
+#elif PPSSPP_PLATFORM(MAC) && PPSSPP_ARCH(ARM64)
+	// macOS ARM64: fast per-thread W^X via pthread_jit_write_protect_np.
+	// Uses hardware APRR/SPRR registers - much faster than mprotect syscalls.
+	if (PlatformIsWXExclusive()) {
+		bool enableWrite = (memProtFlags & MEM_PROT_WRITE) != 0;
+		pthread_jit_write_protect_np(!enableWrite);
 		return true;
 	}
 #endif
