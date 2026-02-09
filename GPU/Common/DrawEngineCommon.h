@@ -314,8 +314,8 @@ protected:
 		u16 offset;
 	};
 
-	enum { MAX_DEFERRED_DRAW_VERTS = 128 };  // If you change this to more than 256, change type of DeferredInds::vertDecodeIndex.
-	enum { MAX_DEFERRED_DRAW_INDS = 512 };  // Monster Hunter spams indexed calls that we end up merging.
+	enum { MAX_DEFERRED_DRAW_VERTS = 256 };  // If you change this to more than 256, change type of DeferredInds::vertDecodeIndex.
+	enum { MAX_DEFERRED_DRAW_INDS = 1024 };  // Monster Hunter spams indexed calls that we end up merging.
 	DeferredVerts drawVerts_[MAX_DEFERRED_DRAW_VERTS];
 	uint32_t drawVertexOffsets_[MAX_DEFERRED_DRAW_VERTS];
 	DeferredInds drawInds_[MAX_DEFERRED_DRAW_INDS];

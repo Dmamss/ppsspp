@@ -1025,12 +1025,12 @@ void GPUCommonHW::Execute_Prim(u32 op, u32 diff) {
 		}
 	}
 
-#define MAX_CULL_CHECK_COUNT 6
+#define MAX_CULL_CHECK_COUNT 64
 
 // For now, turn off culling on platforms where we don't have SIMD bounding box tests, like RISC-V.
 #if PPSSPP_ARCH(ARM_NEON) || PPSSPP_ARCH(SSE2)
 
-#define PASSES_CULLING ((vertexType & (GE_VTYPE_THROUGH_MASK | GE_VTYPE_MORPHCOUNT_MASK | GE_VTYPE_WEIGHT_MASK | GE_VTYPE_IDX_MASK)) || count > MAX_CULL_CHECK_COUNT)
+#define PASSES_CULLING ((vertexType & (GE_VTYPE_THROUGH_MASK | GE_VTYPE_MORPHCOUNT_MASK | GE_VTYPE_WEIGHT_MASK)) || count > MAX_CULL_CHECK_COUNT)
 
 #else
 
@@ -1041,11 +1041,25 @@ void GPUCommonHW::Execute_Prim(u32 op, u32 diff) {
 	// If certain conditions are true, do frustum culling.
 	bool passCulling = PASSES_CULLING;
 	if (!passCulling) {
-		// Do software culling.
-		if (drawEngineCommon_->TestBoundingBoxFast(verts, count, decoder, vertexType)) {
-			passCulling = true;
-		} else {
-			gpuStats.numCulledDraws++;
+		const void *cullVerts = verts;
+		int cullCount = count;
+		if (vertexType & GE_VTYPE_IDX_MASK) {
+			// For indexed draws, compute index bounds and test the vertex range.
+			u16 lo, hi;
+			GetIndexBounds(inds, count, vertexType, &lo, &hi);
+			cullCount = (int)(hi - lo + 1);
+			if (cullCount > MAX_CULL_CHECK_COUNT) {
+				passCulling = true;
+			} else {
+				cullVerts = (const u8 *)verts + (int)lo * decoder->VertexSize();
+			}
+		}
+		if (!passCulling) {
+			if (drawEngineCommon_->TestBoundingBoxFast(cullVerts, cullCount, decoder, vertexType)) {
+				passCulling = true;
+			} else {
+				gpuStats.numCulledDraws++;
+			}
 		}
 	}
 
@@ -1130,12 +1144,24 @@ void GPUCommonHW::Execute_Prim(u32 op, u32 diff) {
 
 			bool passCulling = onePassed || PASSES_CULLING;
 			if (!passCulling) {
-				// Do software culling.
-				_dbg_assert_((vertexType & GE_VTYPE_IDX_MASK) == GE_VTYPE_IDX_NONE);
-				if (drawEngineCommon_->TestBoundingBoxFast(verts, count, decoder, vertexType)) {
-					passCulling = true;
-				} else {
-					gpuStats.numCulledDraws++;
+				const void *cullVerts = verts;
+				int cullCount = count;
+				if (vertexType & GE_VTYPE_IDX_MASK) {
+					u16 lo, hi;
+					GetIndexBounds(inds, count, vertexType, &lo, &hi);
+					cullCount = (int)(hi - lo + 1);
+					if (cullCount > MAX_CULL_CHECK_COUNT) {
+						passCulling = true;
+					} else {
+						cullVerts = (const u8 *)verts + (int)lo * decoder->VertexSize();
+					}
+				}
+				if (!passCulling) {
+					if (drawEngineCommon_->TestBoundingBoxFast(cullVerts, cullCount, decoder, vertexType)) {
+						passCulling = true;
+					} else {
+						gpuStats.numCulledDraws++;
+					}
 				}
 			}
 			if (passCulling) {
