@@ -1,0 +1,138 @@
+name: Update MoltenVK/Vulkan
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'  # Weekly on Monday at 6 AM UTC
+  workflow_dispatch:
+    inputs:
+      force_version:
+        description: 'MoltenVK version (e.g., v1.4.1). Leave empty for latest.'
+        required: false
+        type: string
+
+jobs:
+  update-moltenvk:
+    runs-on: macos-latest  # Need install_name_tool for iOS dylib
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        fetch-depth: 1
+
+    - name: Determine versions
+      id: versions
+      run: |
+        # Current Vulkan header version in repo
+        CURRENT_HEADER=$(grep '#define VK_HEADER_VERSION ' ext/vulkan/vulkan_core.h | awk '{print $3}')
+        echo "current_header=$CURRENT_HEADER" >> $GITHUB_OUTPUT
+
+        # Target MoltenVK version
+        if [ -n "${{ inputs.force_version }}" ]; then
+          TARGET="${{ inputs.force_version }}"
+        else
+          TARGET=$(curl -s https://api.github.com/repos/KhronosGroup/MoltenVK/releases/latest | jq -r .tag_name)
+        fi
+        echo "target=$TARGET" >> $GITHUB_OUTPUT
+        echo "Current header: $CURRENT_HEADER, Target MoltenVK: $TARGET"
+
+    - name: Download MoltenVK release
+      id: download
+      run: |
+        VERSION=${{ steps.versions.outputs.target }}
+        echo "Downloading MoltenVK $VERSION..."
+        curl -L -o /tmp/MoltenVK-all.tar \
+          "https://github.com/KhronosGroup/MoltenVK/releases/download/$VERSION/MoltenVK-all.tar"
+        mkdir -p /tmp/mvk
+        tar xf /tmp/MoltenVK-all.tar -C /tmp/mvk/
+
+        # Get new header version
+        NEW_HEADER=$(grep '#define VK_HEADER_VERSION ' /tmp/mvk/MoltenVK/MoltenVK/include/vulkan/vulkan_core.h | awk '{print $3}')
+        echo "new_header=$NEW_HEADER" >> $GITHUB_OUTPUT
+        echo "New header version: $NEW_HEADER"
+
+    - name: Check if update needed
+      id: check
+      run: |
+        CURRENT="${{ steps.versions.outputs.current_header }}"
+        NEW="${{ steps.download.outputs.new_header }}"
+        FORCED="${{ inputs.force_version }}"
+
+        if [ "$NEW" = "$CURRENT" ] && [ -z "$FORCED" ]; then
+          echo "needs_update=false" >> $GITHUB_OUTPUT
+          echo "Already up to date (Vulkan header version $CURRENT)"
+        else
+          echo "needs_update=true" >> $GITHUB_OUTPUT
+          echo "Update needed: header $CURRENT → $NEW"
+        fi
+
+    - name: Update iOS MoltenVK dylib
+      if: steps.check.outputs.needs_update == 'true'
+      run: |
+        FRAMEWORK_BIN="/tmp/mvk/MoltenVK/MoltenVK/dynamic/MoltenVK.xcframework/ios-arm64/MoltenVK.framework/MoltenVK"
+        if [ -f "$FRAMEWORK_BIN" ]; then
+          # Extract from xcframework and fix install name for PPSSPP's build system
+          cp "$FRAMEWORK_BIN" /tmp/libMoltenVK_ios.dylib
+          install_name_tool -id @rpath/libMoltenVK.dylib /tmp/libMoltenVK_ios.dylib
+          cp /tmp/libMoltenVK_ios.dylib ext/vulkan/iOS/Frameworks/libMoltenVK.dylib
+          echo "iOS dylib updated ($(wc -c < ext/vulkan/iOS/Frameworks/libMoltenVK.dylib) bytes)"
+        else
+          echo "::warning::iOS framework binary not found in release, skipping iOS dylib"
+        fi
+
+    - name: Update macOS MoltenVK dylib
+      if: steps.check.outputs.needs_update == 'true'
+      run: |
+        MACOS_DYLIB="/tmp/mvk/MoltenVK/MoltenVK/dynamic/dylib/macOS/libMoltenVK.dylib"
+        if [ -f "$MACOS_DYLIB" ]; then
+          cp "$MACOS_DYLIB" ext/vulkan/macOS/Frameworks/libMoltenVK.dylib
+          echo "macOS dylib updated ($(wc -c < ext/vulkan/macOS/Frameworks/libMoltenVK.dylib) bytes)"
+        else
+          echo "::warning::macOS dylib not found in release, skipping macOS dylib"
+        fi
+
+    - name: Update Vulkan headers
+      if: steps.check.outputs.needs_update == 'true'
+      run: |
+        cp /tmp/mvk/MoltenVK/MoltenVK/include/vulkan/*.h ext/vulkan/
+        echo "Vulkan headers updated to 1.4.${{ steps.download.outputs.new_header }}"
+
+    - name: Create Pull Request
+      if: steps.check.outputs.needs_update == 'true'
+      run: |
+        VERSION=${{ steps.versions.outputs.target }}
+        NEW_HEADER=${{ steps.download.outputs.new_header }}
+        OLD_HEADER=${{ steps.versions.outputs.current_header }}
+        BRANCH="update/moltenvk-${VERSION}"
+
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+
+        # Check if branch already exists
+        if git ls-remote --exit-code origin "refs/heads/$BRANCH" >/dev/null 2>&1; then
+          echo "Branch $BRANCH already exists, PR may already be open"
+          exit 0
+        fi
+
+        git checkout -b "$BRANCH"
+        git add ext/vulkan/
+        git commit -m "Update MoltenVK to $VERSION (Vulkan headers 1.4.$NEW_HEADER)"
+        git push -u origin "$BRANCH"
+
+        gh pr create \
+          --title "Update MoltenVK to $VERSION" \
+          --body "$(cat <<EOF
+        ## Summary
+        - MoltenVK: updated to **$VERSION**
+        - Vulkan headers: **1.4.$OLD_HEADER** → **1.4.$NEW_HEADER**
+        - iOS dylib: extracted from xcframework with corrected install name
+        - macOS dylib: direct drop-in from official release
+
+        Automated update by the [MoltenVK update workflow](https://github.com/${{ github.repository }}/actions/workflows/update_moltenvk.yml).
+        EOF
+        )" \
+          --base master
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
