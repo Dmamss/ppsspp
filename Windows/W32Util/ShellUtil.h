@@ -3,7 +3,7 @@
 #include <string>
 #include <string_view>
 #include <vector>
-#include <thread>
+#include <cstdint>
 
 class Path;
 

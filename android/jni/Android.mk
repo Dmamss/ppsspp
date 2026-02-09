@@ -330,7 +330,6 @@ EXEC_AND_LIB_FILES := \
   $(SRC)/Common/Render/Text/draw_text_android.cpp \
   $(SRC)/Common/Input/GestureDetector.cpp \
   $(SRC)/Common/Input/InputState.cpp \
-  $(SRC)/Common/Math/fast/fast_matrix.c \
   $(SRC)/Common/Math/math_util.cpp \
   $(SRC)/Common/Math/Statistics.cpp \
   $(SRC)/Common/Math/curves.cpp \
@@ -361,6 +360,7 @@ EXEC_AND_LIB_FILES := \
   $(SRC)/Common/UI/Context.cpp \
   $(SRC)/Common/UI/UIScreen.cpp \
   $(SRC)/Common/UI/Tween.cpp \
+  $(SRC)/Common/UI/Notice.cpp \
   $(SRC)/Common/UI/IconCache.cpp \
   $(SRC)/Common/UI/View.cpp \
   $(SRC)/Common/UI/ViewGroup.cpp \
@@ -431,8 +431,6 @@ ARCH_FILES := \
   $(SRC)/Core/MIPS/ARM/ArmCompFPU.cpp \
   $(SRC)/Core/MIPS/ARM/ArmCompLoadStore.cpp \
   $(SRC)/Core/MIPS/ARM/ArmCompVFPU.cpp \
-  $(SRC)/Core/MIPS/ARM/ArmCompVFPUNEON.cpp \
-  $(SRC)/Core/MIPS/ARM/ArmCompVFPUNEONUtil.cpp \
   $(SRC)/Core/MIPS/ARM/ArmCompReplace.cpp \
   $(SRC)/Core/MIPS/ARM/ArmAsm.cpp \
   $(SRC)/Core/MIPS/ARM/ArmJit.cpp \
@@ -715,6 +713,7 @@ EXEC_AND_LIB_FILES := \
   $(SRC)/Core/HLE/NetAdhocCommon.cpp \
   $(SRC)/Core/HLE/sceNetAdhoc.cpp \
   $(SRC)/ext/aemu_postoffice/client/postoffice.c \
+  $(SRC)/ext/aemu_postoffice/client/postoffice_mem_stdc.c \
   $(SRC)/ext/aemu_postoffice/client/sock_impl_linux.c \
   $(SRC)/ext/aemu_postoffice/client/mutex_impl_cpp.cpp \
   $(SRC)/ext/aemu_postoffice/client/delay_impl_cpp.cpp \

@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <cstring>
 #include "Common/Math/SIMDHeaders.h"
 
 #define TEST_FALLBACK 0
@@ -197,7 +198,7 @@ struct Vec4F32 {
 		return Vec4F32 { _mm_mul_ps(_mm_cvtepi32_ps(value32), _mm_set1_ps(1.0f / 128.0f)) };
 	}
 	static Vec4F32 LoadS16Norm(const int16_t *src) {  // Divides by 32768.0f
-		__m128i bits = _mm_castpd_si128(_mm_load_sd((const double *)src));
+		__m128i bits = _mm_loadl_epi64((const __m128i*)src);
 		// Sign extension. A bit ugly without SSE4.
 		bits = _mm_srai_epi32(_mm_unpacklo_epi16(bits, bits), 16);
 		return Vec4F32 { _mm_mul_ps(_mm_cvtepi32_ps(bits), _mm_set1_ps(1.0f / 32768.0f)) };
@@ -244,7 +245,8 @@ struct Vec4F32 {
 	void StoreConvertToU8(uint8_t *dst) {
 		__m128i zero = _mm_setzero_si128();
 		__m128i ivalue = _mm_packus_epi16(_mm_packs_epi32(_mm_cvttps_epi32(v), zero), zero);
-		_mm_storeu_si32(dst, ivalue);
+		int32_t lo = _mm_cvtsi128_si32(ivalue);
+		memcpy(dst, &lo, 4);
 	}
 
 	static Vec4F32 FromVec4S32(Vec4S32 other) { return Vec4F32{ _mm_cvtepi32_ps(other.v) }; }

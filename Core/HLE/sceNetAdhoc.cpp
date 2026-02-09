@@ -508,9 +508,11 @@ static int pdp_recv_postoffice(int idx, SceNetEtherAddr *saddr, uint16_t *sport,
 	SceNetEtherAddr saddr_copy;
 	int len_copy = *len;
 
-	if (len_copy > 2048) {
+	if (len_copy > AEMU_POSTOFFICE_PDP_BLOCK_MAX) {
 		// trim, library limites pdp packets
-		len_copy = 2048;
+		// some games just provide amazingly huge buffer sizes during recv
+		// if a huge packet cannot be sent, it is logged on the sender side
+		len_copy = AEMU_POSTOFFICE_PDP_BLOCK_MAX;
 	}
 
 	int pdp_recv_status = pdp_recv(pdp_sock, (char *)&saddr_copy, &sport_copy, (char *)data, &len_copy, true);
@@ -573,7 +575,6 @@ int DoBlockingPdpRecv(AdhocSocketRequest& req, s64& result) {
 				result = SCE_NET_ADHOC_ERROR_NOT_ENOUGH_SPACE;
 				return 0;
 			}
-			uint16_t recv_port;
 			ret = pdp_recv_postoffice(req.id - 1, req.remoteMAC, req.remotePort, req.buffer, req.length);
 			if (ret == 0) {
 				// we got data into the request
@@ -738,9 +739,9 @@ int DoBlockingPdpSend(AdhocSocketRequest& req, s64& result, AdhocSendTargets& ta
 		int sockerr = 0;
 		if (serverHasRelay) {
 			ret = pdp_send_postoffice(req.id - 1, &peer->mac, peer->port, req.buffer, targetPeers.length);
-			if (ret == 0){
-				ret == *req.length;
-			}else{
+			if (ret == 0) {
+				ret = targetPeers.length;
+			} else {
 				sockerr = EAGAIN;
 			}
 		} else {
@@ -776,10 +777,15 @@ int DoBlockingPdpSend(AdhocSocketRequest& req, s64& result, AdhocSendTargets& ta
 	return 0;
 }
 
-static int ptp_send_postoffice(int idx, const void *data, int len) {
+static int ptp_send_postoffice(int idx, const void *data, int *len) {
 	AdhocSocket *internal = adhocSockets[idx];
 
-	int ptp_send_status = ptp_send(internal->postofficeHandle, (const char *)data, len, true);
+	if (*len > AEMU_POSTOFFICE_PTP_BLOCK_MAX) {
+		// force fragmentation for giant sends
+		*len = AEMU_POSTOFFICE_PTP_BLOCK_MAX;
+	}
+
+	int ptp_send_status = ptp_send(internal->postofficeHandle, (const char *)data, *len, true);
 	if (ptp_send_status == AEMU_POSTOFFICE_CLIENT_SESSION_DEAD) {
 		// the session is dead, need to be reflected to the other side
 		return SOCKET_ERROR;
@@ -789,7 +795,7 @@ static int ptp_send_postoffice(int idx, const void *data, int len) {
 	}
 	if (ptp_send_status == AEMU_POSTOFFICE_CLIENT_OUT_OF_MEMORY) {
 		// this is pretty critical
-		ERROR_LOG(Log::sceNet, "%s: critical: huge client buf %d what is going on please fix", __func__, len);
+		ERROR_LOG(Log::sceNet, "%s: critical: huge client buf %d what is going on please fix", __func__, len ? *len : 0);
 	}
 
 	return 0;
@@ -812,7 +818,7 @@ int DoBlockingPtpSend(AdhocSocketRequest& req, s64& result) {
 	int ret = 0;
 	int sockerr = 0;
 	if (serverHasRelay) {
-		ret = ptp_send_postoffice(req.id - 1, req.buffer, *req.length);
+		ret = ptp_send_postoffice(req.id - 1, req.buffer, req.length);
 		if (ret == 0) {
 			// sent
 			result = 0;
@@ -871,9 +877,11 @@ static int ptp_recv_postoffice(int idx, void *data, int *len) {
 	AdhocSocket *internal = adhocSockets[idx];
 
 	int len_copy = *len;
-	if (len_copy > 50 * 1024) {
+	if (len_copy > AEMU_POSTOFFICE_PTP_BLOCK_MAX) {
 		// trim, library limit
-		len_copy = 50 * 1024;
+		// some games just provide amazingly huge buffer sizes during recv
+		// if a huge burst cannot be sent, it is logged on the sender side
+		len_copy = AEMU_POSTOFFICE_PTP_BLOCK_MAX;
 	}
 
 	int ptp_recv_status = ptp_recv(internal->postofficeHandle, (char *)data, &len_copy, true);
@@ -1190,10 +1198,9 @@ int DoBlockingPtpConnect(AdhocSocketRequest& req, s64& result, AdhocSendTargets&
 	}
 
 	int sockerr = 0, ret;
-	struct sockaddr_in sin;
+	struct sockaddr_in sin{};
 	// Try to connect again if the first attempt failed due to remote side was not listening yet (ie. ECONNREFUSED or ETIMEDOUT)
 	if (ptpsocket.state == ADHOC_PTP_STATE_CLOSED) {
-		memset(&sin, 0, sizeof(sin));
 		sin.sin_family = AF_INET;
 		sin.sin_addr.s_addr = targetPeer.peers[0].ip;
 		sin.sin_port = htons(ptpsocket.pport + targetPeer.peers[0].portOffset);
@@ -1248,7 +1255,6 @@ int DoBlockingPtpConnect(AdhocSocketRequest& req, s64& result, AdhocSendTargets&
 	// Check whether the connection has been established or not
 	if (!serverHasRelay && ret != SOCKET_ERROR) {
 		socklen_t sinlen = sizeof(sin);
-		memset(&sin, 0, sinlen);
 		// Note: "getpeername" shouldn't failed if the connection has been established, but on Windows it may succeed even when "connect" is still in-progress and not accepted yet (ie. "Tales of VS" on Windows)
 		ret = getpeername(ptpsocket.id, (struct sockaddr*)&sin, &sinlen);
 		if (ret == SOCKET_ERROR) {
@@ -1642,7 +1648,7 @@ u32 sceNetAdhocInit() {
 		// Since we are deleting GameMode Master here, we should probably need to make sure GameMode resources all cleared too.
 		deleteAllGMB();
 
-		serverHasRelay = g_Config.bServerHasRelay;
+		serverHasRelay = g_Config.bUseServerRelay;
 
 		if (serverHasRelay) {
 			aemu_post_office_init();
@@ -2282,7 +2288,7 @@ int sceNetAdhocPdpRecv(int id, void *addr, void * port, void *buf, void *dataLen
 
 				SceNetEtherAddr mac;
 				int received = 0;
-				int error;
+				int error = 0;
 
 				if (serverHasRelay) {
 					while(1) {
@@ -2297,7 +2303,6 @@ int sceNetAdhocPdpRecv(int id, void *addr, void * port, void *buf, void *dataLen
 							// next is larger than current buffer
 							return SCE_NET_ADHOC_ERROR_NOT_ENOUGH_SPACE;
 						}
-						uint16_t recv_port;
 						received = pdp_recv_postoffice(id - 1, saddr, sport, buf, len);
 						if (received == 0) {
 							// we got data
@@ -4297,7 +4302,7 @@ static int sceNetAdhocPtpAccept(int id, u32 peerMacAddrPtr, u32 peerPortPtr, int
 					struct sockaddr_in peeraddr;
 					memset(&peeraddr, 0, sizeof(peeraddr));
 					socklen_t peeraddrlen = sizeof(peeraddr);
-					int error;
+					int error = 0;
 
 					int newsocket = 0;
 					if (serverHasRelay) {
@@ -4866,7 +4871,7 @@ static int sceNetAdhocPtpSend(int id, u32 dataAddr, u32 dataSizeAddr, int timeou
 					int sent = 0;
 					int error = 0;
 					if (serverHasRelay) {
-						sent = ptp_send_postoffice(id - 1, data, *len);
+						sent = ptp_send_postoffice(id - 1, data, len);
 						if (sent == 0) {
 							// sent
 							hleEatMicro(50);

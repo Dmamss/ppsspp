@@ -1,0 +1,118 @@
+name: Build iOS (JIT)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+    - master
+    - actions
+    - 'claude/**'
+    tags:
+      - "v*.*"
+    paths-ignore:
+    - '*.{txt,md}'
+    - 'Tools/**'
+    - '.{editorconfig,gitattributes,gitignore}'
+    - 'appveyor.yml'
+  pull_request:
+    branches:
+    - master
+    paths-ignore:
+    - '*.{txt,md}'
+    - 'Tools/**'
+    - '.{editorconfig,gitattributes,gitignore}'
+    - 'appveyor.yml'
+
+jobs:
+  build-ios-jit:
+    name: iOS JIT Build
+    runs-on: macos-latest
+
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
+        submodules: recursive
+
+    - name: Check Valid Version Tags
+      id: valid-tags
+      shell: bash
+      run: |
+        echo "count=$(git tag -l 'v[0-9]*' | wc -l | tr -d ' ')" >> $GITHUB_OUTPUT
+
+    - name: Fetch upstream tags
+      if: steps.valid-tags.outputs.count == '0'
+      run: |
+        git remote add upstream https://github.com/hrydgard/ppsspp.git || true
+        git fetch --deepen=15000 --no-recurse-submodules --tags --force upstream || exit 0
+
+    - name: Set Env Var(s)
+      run: |
+        echo "GIT_VERSION=$(git describe --always)" >> $GITHUB_ENV
+
+    - name: Install iOS dependencies
+      run: |
+        brew install ldid dpkg pillow
+        xcodebuild -version
+        ls /Applications | grep Xcode
+
+    - name: Create git-version.cpp & Version.txt
+      run: |
+        echo "const char *PPSSPP_GIT_VERSION = \"${GIT_VERSION}\";" > git-version.cpp
+        echo "#define PPSSPP_GIT_VERSION_NO_UPDATE 1" >> git-version.cpp
+        mkdir -p build-ios/PPSSPP.app
+        echo ${GIT_VERSION#v} > build-ios/PPSSPP.app/Version.txt
+
+    - name: Setup ccache
+      uses: hendrikmuhs/ccache-action@5ebbd400eff9e74630f759d94ddd7b6c26299639 # v1.2.20
+      with:
+        key: ios-jit
+        create-symlink: true
+
+    - name: Execute build
+      env:
+        CC: clang
+        CXX: clang++
+        USE_CCACHE: 1
+      run: |
+        export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"
+        export CCACHE_SLOPPINESS=pch_defines,clang_index_store,ivfsoverlay,include_file_ctime,include_file_mtime,modules,system_headers,time_macros
+        export CCACHE_FILECLONE=true
+        export CCACHE_DEPEND=true
+        export CCACHE_COMPILERCHECK=content
+        ./b-ios.sh
+
+    - name: Prepare artifacts
+      run: |
+        mkdir -p ppsspp
+        if [ -e build-ios/PPSSPP.app ]; then
+          find build -name 'PPSSPP*.ipa' -exec cp -a '{}' ppsspp/ \;
+          find build -name 'PPSSPP*.xcarchive' -exec cp -a '{}' ppsspp/ \;
+          find build -name 'PPSSPP*.deb' -exec cp -a '{}' ppsspp/ \;
+          find build -name 'org.ppsspp*.deb' -exec cp -a '{}' ppsspp/ \;
+        fi
+
+    - name: Upload IPA artifact
+      uses: actions/upload-artifact@v6
+      with:
+        name: iOS-JIT-IPA build
+        path: ppsspp/*.ipa
+
+    - name: Upload DEB artifact
+      uses: actions/upload-artifact@v6
+      with:
+        name: iOS-JIT-DEB build
+        path: ppsspp/*.deb
+
+    - name: Upload iOS JIT release
+      uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2.5.0
+      if: github.ref_type == 'tag'
+      with:
+        files: |
+          ppsspp/*.ipa
+        body: >
+          PPSSPP is a cross-platform PSP emulator.
+          Visit PPSSPP [official website](https://ppsspp.org)
+          for a [full changelog](https://ppsspp.org/index.html#news)
+          as well as the [downloads section](https://ppsspp.org/downloads.html)
+          for other platforms.

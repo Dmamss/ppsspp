@@ -79,11 +79,17 @@ public:
 
 		region = (u8 *)jitController.rx_addr;
 		writableRegion = (u8 *)jitController.rw_addr;
-#else // PPSSPP_PLATFORM(SWITCH)
+#elif PPSSPP_PLATFORM(IOS) && PPSSPP_ARCH(ARM64)
+		// iOS: dual-mapped JIT memory (Dolphin/Play! method).
+		// RX region for execution, RW region for code generation. No mprotect needed.
+		void *rwPtr = nullptr;
+		region = (u8 *)AllocateExecutableMemoryDual(region_size, &rwPtr);
+		writableRegion = (u8 *)rwPtr;
+#else
 		// The protection will be set to RW if PlatformIsWXExclusive.
 		region = (u8 *)AllocateExecutableMemory(region_size);
 		writableRegion = region;
-#endif // !PPSSPP_PLATFORM(SWITCH)
+#endif
 		T::SetCodePointer(region, writableRegion);
 	}
 
@@ -151,13 +157,16 @@ public:
 
 	// Call this when shutting down. Don't rely on the destructor, even though it'll do the job.
 	void FreeCodeSpace() {
-#if !PPSSPP_PLATFORM(SWITCH)
-		ProtectMemoryPages(region, region_size, MEM_PROT_READ | MEM_PROT_WRITE);
-		FreeExecutableMemory(region, region_size);
-#else // !PPSSPP_PLATFORM(SWITCH)
+#if PPSSPP_PLATFORM(SWITCH)
 		jitClose(&jitController);
 		printf("[NXJIT]: Jit closed\n");
-#endif // PPSSPP_PLATFORM(SWITCH)
+#elif PPSSPP_PLATFORM(IOS) && PPSSPP_ARCH(ARM64)
+		// iOS: free both RX and RW dual mappings.
+		FreeExecutableMemoryDual(region, writableRegion, region_size);
+#else
+		ProtectMemoryPages(region, region_size, MEM_PROT_READ | MEM_PROT_WRITE);
+		FreeExecutableMemory(region, region_size);
+#endif
 		region = nullptr;
 		writableRegion = nullptr;
 		region_size = 0;

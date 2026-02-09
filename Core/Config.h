@@ -50,16 +50,17 @@ public:
 	};
 
 	// It's OK to call these redundantly.
-	void Start(const std::string &gameId);
-	void Stop(const std::string &gameId);
+	void Start(std::string_view gameId);
+	void Stop(std::string_view gameId);
+	void Reset(std::string_view gameId);
 
 	void Load(const Section *section);
 	void Save(Section *section);
 
-	bool GetPlayedTimeString(const std::string &gameId, std::string *str) const;
+	bool GetPlayedTimeString(std::string_view, std::string *str) const;
 
 private:
-	std::map<std::string, PlayTime> tracker_;
+	std::map<std::string, PlayTime, std::less<>> tracker_;
 };
 
 struct ConfigSetting;
@@ -81,6 +82,7 @@ struct DisplayLayoutConfig : public ConfigBlock {
 	bool bDisplayIntegerScale = false;  // Snaps scaling to integer scale factors in raw pixels.
 	float fDisplayAspectRatio = 1.0f;  // Stored relative to the PSP's native ratio, so 1.0 is the normal pixel aspect ratio.
 	int iInternalScreenRotation = ROTATION_LOCKED_HORIZONTAL;  // The internal screen rotation angle. Useful for vertical SHMUPs and similar.
+	bool bRotateControlsWithScreen = true;  // Rotate gamepad controls along with the internal screen rotation.
 	bool bIgnoreScreenInsets = true;  // Android: Center screen disregarding insets if this is enabled.
 
 	// Deprecated
@@ -88,7 +90,7 @@ struct DisplayLayoutConfig : public ConfigBlock {
 	int iCardboardScreenSize = 50; // Screen Size (in %)
 	int iCardboardXShift = 0; // X-Shift of Screen (in %)
 	int iCardboardYShift = 0; // Y-Shift of Screen (in %)
-	bool bImmersiveMode = true;  // Mode on Android Kitkat 4.4 and later that hides the back button etc.
+	bool bImmersiveMode = false;  // Mode on Android Kitkat 4.4 and later that hides the back button etc.
 
 	bool InternalRotationIsPortrait() const;
 	bool CanResetToDefault() const override { return true; }
@@ -141,6 +143,24 @@ struct TouchControlConfig : public ConfigBlock {
 	bool CanResetToDefault() const override { return true; }
 	bool ResetToDefault(std::string_view blockName) override;
 	size_t Size() const override { return sizeof(TouchControlConfig); }  // For sanity checks
+};
+
+struct GestureControlConfig : public ConfigBlock {
+	// Motion gesture controller
+	bool bGestureControlEnabled = false;
+	int iSwipeUp = 0;
+	int iSwipeDown = 0;
+	int iSwipeLeft = 0;
+	int iSwipeRight = 0;
+	float fSwipeSensitivity = 1.0f;
+	float fSwipeSmoothing = 0.5f;
+	int iDoubleTapGesture = 0;
+	bool bAnalogGesture = false;
+	float fAnalogGestureSensitivity = 1.0f;
+
+	bool CanResetToDefault() const override { return true; }
+	bool ResetToDefault(std::string_view blockName) override;
+	size_t Size() const override { return sizeof(GestureControlConfig); }  // For sanity checks
 };
 
 struct Config : public ConfigBlock {
@@ -292,6 +312,8 @@ public:
 	int iWindowY;
 	int iWindowWidth;  // Windows and other windowed environments
 	int iWindowHeight;
+	int iWindowSizeState;  // WindowSizeState enum
+
 	bool bShowMenuBar;  // Windows-only
 
 	float fUITint;
@@ -302,7 +324,6 @@ public:
 	int iAppSwitchMode;
 	bool bFullScreen;
 	bool bFullScreenMulti;
-	int iForceFullScreen = -1; // -1 = nope, 0 = force off, 1 = force on (not saved.)
 	int iInternalResolution;  // 0 = Auto (native), 1 = 1x (480x272), 2 = 2x, 3 = 3x, 4 = 4x and so on.
 	int iAnisotropyLevel;  // 0 - 5, powers of 2: 0 = 1x = no aniso
 	int iMultiSampleLevel;
@@ -425,6 +446,7 @@ public:
 	// Type of tilt input currently selected: Defined in TiltEventProcessor.h
 	// 0 - no tilt, 1 - analog stick, 2 - D-Pad, 3 - Action Buttons (Tri, Cross, Square, Circle)
 	int iTiltInputType;
+	bool bTiltInputEnabled;
 
 	// The four tabs (including Remote last)
 	bool bGridView1;
@@ -441,17 +463,8 @@ public:
 	bool bRightAnalogCustom;
 	bool bRightAnalogDisableDiagonal;
 
-	// Motion gesture controller
-	bool bGestureControlEnabled;
-	int iSwipeUp;
-	int iSwipeDown;
-	int iSwipeLeft;
-	int iSwipeRight;
-	float fSwipeSensitivity;
-	float fSwipeSmoothing;
-	int iDoubleTapGesture;
-	bool bAnalogGesture;
-	float fAnalogGestureSensibility;
+	// 0 for left, 1 for right
+	GestureControlConfig gestureControls[2];
 
 	// Controls Visibility
 	bool bShowTouchControls = false;
@@ -539,7 +552,7 @@ public:
 	// Networking
 	bool bEnableAdhocServer;
 	std::string sProAdhocServer;
-	bool bServerHasRelay;
+	bool bUseServerRelay;
 	std::vector<std::string> proAdhocServerList;
 	std::string sInfrastructureDNSServer;
 	std::string sInfrastructureUsername;  // Username used for Infrastructure play. Different restrictions.
@@ -686,12 +699,6 @@ public:
 	int NextValidBackend();
 	bool IsBackendEnabled(GPUBackend backend);
 
-	bool UseFullScreen() const {
-		if (iForceFullScreen != -1)
-			return iForceFullScreen == 1;
-		return bFullScreen;
-	}
-
 	bool LoadAppendedConfig();
 	void SetAppendedConfigIni(const Path &path) { appendedConfigFileName_ = path; }
 	void UpdateAfterSettingAutoFrameSkip();
@@ -713,6 +720,10 @@ public:
 	}
 
 	static int GetDefaultValueInt(int *configSetting);
+
+	void DoNotSaveSetting(void *configSetting) {
+		settingsNotToSave_.push_back(configSetting);
+	}
 
 private:
 	void LoadStandardControllerIni();
@@ -743,6 +754,9 @@ private:
 	Path appendedConfigFileName_;
 	// A set make more sense, but won't have many entry, and I dont want to include the whole std::set header here
 	std::vector<std::string> appendedConfigUpdatedGames_;
+	std::vector<void *> settingsNotToSave_;
+
+	bool ShouldSaveSetting(const void *configSetting) const;
 };
 
 std::string CreateRandMAC();
