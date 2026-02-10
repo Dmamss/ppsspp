@@ -121,10 +121,10 @@ __attribute__((used)) static Class _forceLinkSceneDelegate = [SceneDelegate clas
 		return UIInterfaceOrientationMaskLandscape;
 	case ROTATION_AUTO:
 	default:
-		return UIInterfaceOrientationMaskAll;
+		return UIInterfaceOrientationMaskLandscape;
 	}
 
-	return UIInterfaceOrientationMaskAll; // or at least include Portrait
+	return UIInterfaceOrientationMaskLandscape;
 }
 
 @end
