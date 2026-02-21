@@ -391,6 +391,16 @@ static const ConfigSetting achievementSettings[] = {
 	ConfigSetting("AchievementsUnlockedPos", SETTING(g_Config, iAchievementsUnlockedPos), (int)ScreenEdgePosition::TOP_CENTER, CfgFlag::PER_GAME | CfgFlag::DEFAULT),
 };
 
+static int DefaultLockedCPUSpeed() {
+#if PPSSPP_PLATFORM(IOS)
+	// Lock to PSP's official max (333 MHz) instead of the default 222 MHz.
+	// Users can go higher (up to 1000 MHz) via Settings for more speed.
+	return 333;
+#else
+	return 0;
+#endif
+}
+
 static const ConfigSetting cpuSettings[] = {
 	ConfigSetting("CPUCore", SETTING(g_Config, iCpuCore), &DefaultCpuCore, CfgFlag::PER_GAME | CfgFlag::REPORT),
 	ConfigSetting("SeparateSASThread", SETTING(g_Config, bSeparateSASThread), &DefaultSasThread, CfgFlag::PER_GAME | CfgFlag::REPORT),
@@ -400,7 +410,7 @@ static const ConfigSetting cpuSettings[] = {
 	ConfigSetting("HideSlowWarnings", SETTING(g_Config, bHideSlowWarnings), false, CfgFlag::DEFAULT),
 	ConfigSetting("HideStateWarnings", SETTING(g_Config, bHideStateWarnings), false, CfgFlag::DEFAULT),
 	ConfigSetting("JitDisableFlags", SETTING(g_Config, uJitDisableFlags), (uint32_t)0, CfgFlag::PER_GAME),
-	ConfigSetting("CPUSpeed", SETTING(g_Config, iLockedCPUSpeed), 0, CfgFlag::PER_GAME | CfgFlag::REPORT),
+	ConfigSetting("CPUSpeed", SETTING(g_Config, iLockedCPUSpeed), &DefaultLockedCPUSpeed, CfgFlag::PER_GAME | CfgFlag::REPORT),
 };
 
 static int DefaultInternalResolution() {
