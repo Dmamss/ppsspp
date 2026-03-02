@@ -354,11 +354,10 @@ bool DrawEngineCommon::TestBoundingBox(const void *vdata, const void *inds, int 
 	return true;
 }
 
-// NOTE: This doesn't handle through-mode, indexing, morph, or skinning.
-// TODO: For high vertex counts, we should just take the min/max of all the verts, and test the resulting six cube
-// corners. That way we can cull more draws quite cheaply.
-// We could take the min/max during the regular vertex decode, and just skip the draw call if it's trivially culled.
-// This would help games like Midnight Club (that one does a lot of out-of-bounds drawing) immensely.
+// NOTE: This doesn't handle through-mode, morph, or skinning.
+// Indexed draws are handled by the caller (GPUCommonHW.cpp) which computes index bounds
+// and passes the bounded vertex range. Vertex count limit raised to 64 (was 6).
+// TODO: For very high vertex counts, compute min/max AABB during decode and cull post-decode.
 bool DrawEngineCommon::TestBoundingBoxFast(const void *vdata, int vertexCount, const VertexDecoder *dec, u32 vertType) {
 	SimpleVertex *corners = (SimpleVertex *)(decoded_ + 65536 * 12);
 	float *verts = (float *)(decoded_ + 65536 * 18);
